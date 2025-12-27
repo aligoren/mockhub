@@ -1,0 +1,1239 @@
+@page "/projects/new"
+@page "/projects/{ProjectId:guid}"
+@page "/projects/{ProjectId:guid}/edit"
+@rendermode InteractiveServer
+@using MockHub.Application.Interfaces
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IMockProjectService ProjectService
+@inject IMockEndpointService EndpointService
+@inject IRequestLogService LogService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(isNew ? "New Project" : project?.Name ?? "Project") - MockHub</PageTitle>
+
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-2">
+            <a href="/projects" class="btn btn-sm btn-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="19" y1="12" x2="5" y2="12"/>
+                    <polyline points="12 19 5 12 12 5"/>
+                </svg>
+            </a>
+            <h1 class="page-title">@(isNew ? "New Project" : project?.Name)</h1>
+        </div>
+        @if (!isNew && project != null)
+        {
+            <div class="flex items-center gap-2 mt-1">
+                <code class="mock-url">@GetMockBaseUrl()</code>
+                <button class="btn btn-xs btn-outline" @onclick="CopyMockUrl" title="Copy URL">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                </button>
+            </div>
+        }
+    </div>
+    @if (!isNew)
+    {
+        <div class="flex gap-2">
+            <span class="badge badge-success">Active</span>
+        </div>
+    }
+</div>
+
+@if (loading)
+{
+    <div class="flex items-center justify-center" style="padding: 3rem;">
+        <div class="spinner"></div>
+    </div>
+}
+else
+{
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger">@errorMessage</div>
+    }
+
+    <div class="grid" style="grid-template-columns: 1fr 300px; gap: 1.5rem;">
+        <!-- Main Content -->
+        <div>
+            <!-- Project Settings Card -->
+            <div class="card mb-6">
+                <h3 class="card-title mb-4">Project Settings</h3>
+                
+                <div class="form-group">
+                    <label class="form-label">Project Name *</label>
+                    <input type="text" class="form-control" @bind="model.Name" placeholder="API Project" />
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" @bind="model.Description" rows="2" placeholder="Project description..."></textarea>
+                </div>
+
+                <div class="flex gap-4 mt-4">
+                    <label class="flex items-center gap-2" style="cursor: pointer;">
+                        <input type="checkbox" @bind="model.EnableCors" />
+                        <span>Enable CORS</span>
+                    </label>
+                    <label class="flex items-center gap-2" style="cursor: pointer;">
+                        <input type="checkbox" @bind="model.EnableLogging" />
+                        <span>Request Logging</span>
+                    </label>
+                </div>
+
+                <div class="flex justify-between mt-4" style="padding-top: 1rem; border-top: 1px solid var(--border-color);">
+                    <button type="button" class="btn btn-outline" @onclick="Cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveProject" disabled="@saving">
+                        @if (saving)
+                        {
+                            <div class="spinner" style="width: 16px; height: 16px;"></div>
+                            <span>Saving...</span>
+                        }
+                        else
+                        {
+                            <span>@(isNew ? "Create" : "Save")</span>
+                        }
+                    </button>
+                </div>
+            </div>
+
+            @if (!isNew)
+            {
+                <!-- Endpoints Card -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Endpoints</h3>
+                        <button class="btn btn-sm btn-primary" @onclick="AddEndpoint">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Add Endpoint
+                        </button>
+                    </div>
+
+                    @if (endpoints.Count == 0)
+                    {
+                        <div class="empty-state" style="padding: 2rem;">
+<div class="empty-state-title">No endpoints yet</div>
+                        <p class="text-muted">Add your first endpoint</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                            @foreach (var endpoint in endpoints)
+                            {
+                                <div class="endpoint-item" @onclick="() => EditEndpoint(endpoint.Id)">
+                                    <div class="flex items-center gap-3">
+                                        <span class="method-badge method-@endpoint.Method.ToString().ToLower()">
+                                            @endpoint.Method
+                                        </span>
+                                        <div>
+                                            <div style="font-weight: 500;">@endpoint.Name</div>
+                                            <code class="text-muted text-sm">@endpoint.Route</code>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-3">
+                                        <span class="status-badge">@(endpoint.Responses?.FirstOrDefault()?.StatusCode ?? 200)</span>
+                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteEndpoint(endpoint.Id)" @onclick:stopPropagation="true">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <polyline points="3 6 5 6 21 6"/>
+                                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+
+        <!-- Sidebar -->
+        <div>
+            @if (!isNew && project != null)
+            {
+                <div class="card mb-4">
+                    <h4 style="margin: 0 0 1rem; font-size: 0.875rem; color: var(--text-muted);">Mock API URL</h4>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span style="width: 8px; height: 8px; background: var(--success-color); border-radius: 50%; animation: pulse 2s infinite;"></span>
+                        <span class="text-sm">Active</span>
+                    </div>
+                    <code style="display: block; padding: 0.5rem; background: var(--bg-darker); border-radius: 0.25rem; font-size: 0.75rem; word-break: break-all;">
+                        @project.MockUrl
+                    </code>
+                    <p class="text-xs text-muted mt-2">All endpoints are accessible under this path</p>
+                </div>
+            }
+
+            <div class="card mb-4">
+                <h4 style="margin: 0 0 1rem; font-size: 0.875rem; color: var(--text-muted);">Quick Info</h4>
+                <div class="text-sm" style="display: flex; flex-direction: column; gap: 0.5rem;">
+                    <div class="flex justify-between">
+                        <span class="text-muted">Endpoint Count</span>
+                        <span>@endpoints.Count</span>
+                    </div>
+                    @if (!isNew)
+                    {
+                        <div class="flex justify-between">
+                            <span class="text-muted">Created</span>
+                            <span>@project?.CreatedAt.ToString("dd MMM yyyy")</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <!-- Dynamic Variables Help -->
+            <div class="card">
+                <h4 style="margin: 0 0 1rem; font-size: 0.875rem; color: var(--text-muted);">Dynamic Variables</h4>
+                <div class="text-sm" style="display: flex; flex-direction: column; gap: 0.25rem;">
+                    <code class="variable-hint">{{faker.name.fullName}}</code>
+                    <code class="variable-hint">{{faker.internet.email}}</code>
+                    <code class="variable-hint">{{faker.random.uuid}}</code>
+                    <code class="variable-hint">{{faker.random.number}}</code>
+                    <code class="variable-hint">{{faker.date.recent}}</code>
+                    <code class="variable-hint">{{request.params.id}}</code>
+                    <code class="variable-hint">{{request.query.page}}</code>
+                </div>
+                <a href="/variables" class="btn btn-sm btn-outline" style="margin-top: 0.75rem; width: 100%;">
+                    All Variables
+                </a>
+            </div>
+        </div>
+    </div>
+}
+
+@* Endpoint Modal - Kapsamlı *@
+@if (showEndpointModal)
+{
+    <div class="modal-backdrop" @onclick="CloseEndpointModal">
+        <div class="modal modal-large" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 class="modal-title">@(editingEndpoint == null ? "New Endpoint" : "Edit Endpoint")</h3>
+                <button class="btn-icon" @onclick="CloseEndpointModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <!-- Tabs -->
+                <div class="modal-tabs">
+                    <button class="modal-tab @(activeTab == "general" ? "active" : "")" @onclick="SetTabGeneral">
+                        General
+                    </button>
+                    <button class="modal-tab @(activeTab == "response" ? "active" : "")" @onclick="SetTabResponse">
+                        Response
+                    </button>
+                    <button class="modal-tab @(activeTab == "headers" ? "active" : "")" @onclick="SetTabHeaders">
+                        Headers
+                    </button>
+                    <button class="modal-tab @(activeTab == "rules" ? "active" : "")" @onclick="SetTabRules">
+                        Rules
+                    </button>
+                    @if (editingEndpoint != null)
+                    {
+                        <button class="modal-tab @(activeTab == "logs" ? "active" : "")" @onclick="SetTabLogs">
+                            Logs
+                            @if (endpointLogs.Count > 0)
+                            {
+                                <span class="tab-badge">@endpointLogs.Count</span>
+                            }
+                        </button>
+                    }
+                </div>
+
+                <!-- Tab Content -->
+                <div class="tab-content">
+                    @if (activeTab == "general")
+                    {
+                        <div class="form-group">
+                            <label class="form-label">Endpoint Name *</label>
+                            <input type="text" class="form-control" @bind="endpointModel.Name" placeholder="Get Users" />
+                        </div>
+                        <div class="grid grid-cols-2" style="gap: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label">HTTP Method *</label>
+                                <select class="form-control" @bind="endpointModel.Method">
+                                    @foreach (var method in Enum.GetValues<HttpMethodType>())
+                                    {
+                                        <option value="@method">@method</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Route *</label>
+                                <input type="text" class="form-control" @bind="endpointModel.Route" placeholder="/api/users/:id" />
+                                <small class="text-muted">You can use :param or {param}</small>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-control" @bind="endpointModel.Description" placeholder="Endpoint description" />
+                        </div>
+                        <div class="grid grid-cols-2" style="gap: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label">Min Delay (ms)</label>
+                                <input type="number" class="form-control" @bind="responseModel.DelayMin" min="0" placeholder="0" />
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Max Delay (ms)</label>
+                                <input type="number" class="form-control" @bind="responseModel.DelayMax" min="0" placeholder="0" />
+                            </div>
+                        </div>
+                    }
+                    else if (activeTab == "response")
+                    {
+                        <div class="grid grid-cols-2" style="gap: 1rem;">
+                            <div class="form-group">
+                                <label class="form-label">Status Code *</label>
+                                <select class="form-control" @bind="responseModel.StatusCode">
+                                    <optgroup label="2xx Success">
+                                        <option value="200">200 OK</option>
+                                        <option value="201">201 Created</option>
+                                        <option value="204">204 No Content</option>
+                                    </optgroup>
+                                    <optgroup label="3xx Redirection">
+                                        <option value="301">301 Moved Permanently</option>
+                                        <option value="302">302 Found</option>
+                                        <option value="304">304 Not Modified</option>
+                                    </optgroup>
+                                    <optgroup label="4xx Client Error">
+                                        <option value="400">400 Bad Request</option>
+                                        <option value="401">401 Unauthorized</option>
+                                        <option value="403">403 Forbidden</option>
+                                        <option value="404">404 Not Found</option>
+                                        <option value="422">422 Unprocessable Entity</option>
+                                        <option value="429">429 Too Many Requests</option>
+                                    </optgroup>
+                                    <optgroup label="5xx Server Error">
+                                        <option value="500">500 Internal Server Error</option>
+                                        <option value="502">502 Bad Gateway</option>
+                                        <option value="503">503 Service Unavailable</option>
+                                    </optgroup>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Content-Type *</label>
+                                <select class="form-control" @bind="responseModel.ContentType" @bind:after="OnContentTypeChanged">
+                                    <option value="application/json">application/json</option>
+                                    <option value="application/xml">application/xml</option>
+                                    <option value="text/plain">text/plain</option>
+                                    <option value="text/html">text/html</option>
+                                    <option value="text/javascript">text/javascript</option>
+                                    <option value="text/css">text/css</option>
+                                    <option value="application/octet-stream">application/octet-stream</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <div class="flex justify-between items-center">
+                                <label class="form-label">Response Body</label>
+                                <div class="flex gap-2">
+                                    <button type="button" class="btn btn-xs btn-outline" @onclick="InsertSampleContent">
+                                        Insert Sample
+                                    </button>
+                                    <button type="button" class="btn btn-xs btn-outline" @onclick="FormatDocument">
+                                        Format
+                                    </button>
+                                </div>
+                            </div>
+                            <MonacoEditor @ref="monacoEditor" 
+                                          @bind-Value="responseModel.Body" 
+                                          Language="@GetLanguageFromContentType(responseModel.ContentType)" 
+                                          Height="300px" />
+                            <small class="text-muted">
+                                Dynamic variables: <code>@("{{faker.name.fullName}}")</code>, <code>@("{{faker.random.uuid}}")</code>, <code>@("{{request.params.id}}")</code>
+                            </small>
+                        </div>
+                    }
+                    else if (activeTab == "headers")
+                    {
+                        <div class="form-group">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="form-label" style="margin:0;">Response Headers</label>
+                                <button type="button" class="btn btn-xs btn-outline" @onclick="AddHeader">
+                                    + Add Header
+                                </button>
+                            </div>
+                            
+                            @if (responseHeaders.Count == 0)
+                            {
+                                <div class="empty-state-sm">
+                                    <p class="text-muted text-sm">No custom headers yet</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                    @foreach (var header in responseHeaders)
+                                    {
+                                        <div class="header-row">
+                                            <input type="text" class="form-control" @bind="header.Key" placeholder="Header name" />
+                                            <input type="text" class="form-control" @bind="header.Value" placeholder="Value" />
+                                            <button type="button" class="btn btn-sm btn-danger" @onclick="() => RemoveHeader(header)">
+                                                ✕
+                                            </button>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        
+                        <div class="info-box">
+                            <strong>Automatically Added Headers:</strong>
+                            <ul>
+                                <li>Content-Type (selected above)</li>
+                                <li>X-Powered-By: MockHub</li>
+                                @if (model.EnableCors)
+                                {
+                                    <li>Access-Control-Allow-Origin: *</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    else if (activeTab == "rules")
+                    {
+                        <div class="form-group">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="form-label" style="margin:0;">Validation Rules</label>
+                                <button type="button" class="btn btn-xs btn-outline" @onclick="AddValidationRule">
+                                    + Add Rule
+                                </button>
+                            </div>
+                            
+                            @if (validationRules.Count == 0)
+                            {
+                                <div class="empty-state-sm">
+                                    <p class="text-muted text-sm">No validation rules yet</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                                    @foreach (var rule in validationRules)
+                                    {
+                                        <div class="rule-card">
+                                            <div class="grid grid-cols-3" style="gap: 0.5rem;">
+                                                <div class="form-group" style="margin:0;">
+                                                    <label class="form-label text-xs">Parameter</label>
+                                                    <input type="text" class="form-control form-control-sm" @bind="rule.ParameterName" placeholder="id" />
+                                                </div>
+                                                <div class="form-group" style="margin:0;">
+                                                    <label class="form-label text-xs">Location</label>
+                                                    <select class="form-control form-control-sm" @bind="rule.Location">
+                                                        <option value="Query">Query String</option>
+                                                        <option value="Path">URL Path</option>
+                                                        <option value="Header">Header</option>
+                                                        <option value="Body">Body</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group" style="margin:0;">
+                                                    <label class="form-label text-xs">Type</label>
+                                                    <select class="form-control form-control-sm" @bind="rule.DataType">
+                                                        <option value="String">String</option>
+                                                        <option value="Number">Number</option>
+                                                        <option value="Boolean">Boolean</option>
+                                                        <option value="Email">Email</option>
+                                                        <option value="Uuid">UUID</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <div class="flex items-center gap-3 mt-2">
+                                                <label class="flex items-center gap-1" style="cursor: pointer;">
+                                                    <input type="checkbox" @bind="rule.IsRequired" />
+                                                    <span class="text-sm">Required</span>
+                                                </label>
+                                                <button type="button" class="btn btn-xs btn-danger" @onclick="() => RemoveValidationRule(rule)">
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                            }
+                                        </div>
+                                    }
+                        </div>
+                    }
+                    else if (activeTab == "logs")
+                    {
+                        <div class="endpoint-logs-section">
+                            @if (loadingLogs)
+                            {
+                                <div class="flex items-center justify-center" style="padding: 2rem;">
+                                    <div class="spinner"></div>
+                                </div>
+                            }
+                            else if (endpointLogs.Count == 0)
+                            {
+                                <div class="empty-state-sm">
+                                    <p class="text-muted">No requests to this endpoint yet</p>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="endpoint-logs-list">
+                                    @foreach (var log in endpointLogs)
+                                    {
+                                        <div class="endpoint-log-item @(log.ResponseStatusCode >= 400 ? "error" : "")">
+                                            <div class="log-item-header">
+                                                <span class="log-time">@log.CreatedAt.ToString("dd.MM HH:mm:ss")</span>
+                                                <span class="badge @GetLogStatusBadgeClass(log.ResponseStatusCode)">@log.ResponseStatusCode</span>
+                                                <span class="log-duration">@log.DurationMs ms</span>
+                                            </div>
+                                            <div class="log-item-path">
+                                                <code>@log.Path@log.QueryString</code>
+                                            </div>
+                                            @if (!string.IsNullOrEmpty(log.ClientIp))
+                                            {
+                                                <div class="log-item-meta">
+                                                    <span class="text-muted text-xs">IP: @log.ClientIp</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </div>
+                                <div class="flex justify-center" style="padding-top: 1rem;">
+                                    <a href="/logs?endpoint=@editingEndpoint?.Id" class="btn btn-sm btn-outline">
+                                        View All Logs
+                                    </a>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" @onclick="CloseEndpointModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="SaveEndpoint">
+                    @(editingEndpoint == null ? "Create" : "Save")
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    @@keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    
+    .endpoint-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem;
+        background: var(--bg-darker);
+        border-radius: 0.5rem;
+        cursor: pointer;
+        transition: all 0.15s ease;
+        border: 1px solid transparent;
+    }
+    
+    .endpoint-item:hover {
+        background: var(--bg-card);
+        border-color: var(--primary-color);
+    }
+    
+    .status-badge {
+        padding: 0.125rem 0.5rem;
+        border-radius: 0.25rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success-color);
+    }
+    
+    .variable-hint {
+        display: block;
+        padding: 0.25rem 0.5rem;
+        background: var(--bg-darker);
+        border-radius: 0.25rem;
+        font-size: 0.7rem;
+        color: var(--text-muted);
+    }
+    
+    .modal-large {
+        width: 800px;
+        max-width: 95vw;
+        max-height: 90vh;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .modal-large .modal-body {
+        overflow-y: auto;
+        flex: 1;
+    }
+    
+    .tab-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 5px;
+        margin-left: 6px;
+        font-size: 0.6875rem;
+        font-weight: 600;
+        background: var(--primary-color);
+        color: white;
+        border-radius: 9px;
+    }
+    
+    .endpoint-logs-section {
+        padding: 0.5rem 0;
+    }
+    
+    .endpoint-logs-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        max-height: 350px;
+        overflow-y: auto;
+    }
+    
+    .endpoint-log-item {
+        padding: 0.75rem;
+        background: var(--hover-bg);
+        border-radius: 6px;
+        border-left: 3px solid var(--success-color);
+    }
+    
+    .endpoint-log-item.error {
+        border-left-color: var(--danger-color);
+        background: rgba(239, 68, 68, 0.05);
+    }
+    
+    .log-item-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.375rem;
+    }
+    
+    .log-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    .log-duration {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: auto;
+    }
+    
+    .log-item-path {
+        font-size: 0.8125rem;
+    }
+    
+    .log-item-path code {
+        background: transparent;
+        padding: 0;
+    }
+    
+    .log-item-meta {
+        margin-top: 0.25rem;
+    }
+    
+    .modal-tabs {
+        display: flex;
+        gap: 0.25rem;
+        padding: 0 0 1rem 0;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 1rem;
+    }
+    
+    .modal-tab {
+        padding: 0.5rem 1rem;
+        border: none;
+        background: transparent;
+        color: var(--text-muted);
+        cursor: pointer;
+        border-radius: 0.375rem;
+        font-size: 0.875rem;
+        transition: all 0.15s ease;
+    }
+    
+    .modal-tab:hover {
+        background: var(--bg-darker);
+        color: var(--text-primary);
+    }
+    
+    .modal-tab.active {
+        background: var(--primary-color);
+        color: white;
+    }
+    
+    .code-editor {
+        font-family: 'Fira Code', 'Monaco', 'Consolas', monospace;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        background: var(--bg-darker);
+        border: 1px solid var(--border-color);
+        resize: vertical;
+    }
+    
+    .header-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 0.5rem;
+        align-items: center;
+    }
+    
+    .rule-card {
+        padding: 0.75rem;
+        background: var(--bg-darker);
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-color);
+    }
+    
+    .empty-state-sm {
+        padding: 1.5rem;
+        text-align: center;
+        background: var(--bg-darker);
+        border-radius: 0.5rem;
+        border: 1px dashed var(--border-color);
+    }
+    
+    .info-box {
+        margin-top: 1rem;
+        padding: 0.75rem;
+        background: rgba(59, 130, 246, 0.1);
+        border: 1px solid rgba(59, 130, 246, 0.2);
+        border-radius: 0.5rem;
+        font-size: 0.8rem;
+    }
+    
+    .info-box ul {
+        margin: 0.5rem 0 0 1rem;
+        padding: 0;
+    }
+    
+    .info-box li {
+        color: var(--text-muted);
+    }
+    
+    .btn-xs {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+    
+    .text-xs {
+        font-size: 0.7rem;
+    }
+    
+    .form-control-sm {
+        padding: 0.375rem 0.5rem;
+        font-size: 0.8rem;
+    }
+</style>
+
+@code {
+    [Parameter] public Guid ProjectId { get; set; }
+    
+    private bool isNew => ProjectId == Guid.Empty;
+    private bool loading = true;
+    private bool saving = false;
+    private string? errorMessage;
+    private string? userId;
+    
+    private MockProjectDto? project;
+    private List<MockEndpointDto> endpoints = new();
+    
+    private CreateMockProjectDto model = new();
+    private bool showEndpointModal = false;
+    private MockEndpointDto? editingEndpoint;
+    private CreateMockEndpointDto endpointModel = new();
+    
+    // Response model
+    private ResponseModel responseModel = new();
+    
+    // Endpoint logs
+    private List<RequestLogDetailDto> endpointLogs = new();
+    private bool loadingLogs = false;
+    private List<HeaderModel> responseHeaders = new();
+    private List<ValidationRuleModel> validationRules = new();
+    private string activeTab = "general";
+    private MonacoEditor? monacoEditor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (!isNew)
+        {
+            var projectResult = await ProjectService.GetByIdAsync(ProjectId);
+            if (projectResult.IsSuccess && projectResult.Data != null)
+            {
+                project = projectResult.Data;
+                model = new CreateMockProjectDto
+                {
+                    Name = project.Name,
+                    Slug = project.Slug,
+                    Description = project.Description,
+                    EnableCors = project.EnableCors,
+                    EnableLogging = project.EnableLogging
+                };
+
+                var endpointsResult = await EndpointService.GetByProjectAsync(ProjectId);
+                if (endpointsResult.IsSuccess)
+                {
+                    endpoints = endpointsResult.Data ?? new List<MockEndpointDto>();
+                }
+            }
+        }
+        else
+        {
+            model.EnableCors = true;
+            model.EnableLogging = true;
+        }
+
+        loading = false;
+    }
+
+    private async Task SaveProject()
+    {
+        if (string.IsNullOrEmpty(model.Name))
+        {
+            errorMessage = "Project name is required";
+            StateHasChanged();
+            return;
+        }
+
+        saving = true;
+        errorMessage = null;
+        StateHasChanged();
+
+        try
+        {
+            if (isNew)
+            {
+                if (string.IsNullOrEmpty(userId))
+                {
+                    var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+                    userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+                    
+                    if (string.IsNullOrEmpty(userId))
+                    {
+                        errorMessage = "User session not found. Please sign in again.";
+                        return;
+                    }
+                }
+                
+                var result = await ProjectService.CreateAsync(userId, model);
+                
+                if (result.IsSuccess)
+                {
+                    Navigation.NavigateTo($"/projects/{result.Data!.Id}");
+                }
+                else
+                {
+                    errorMessage = result.Error ?? "An error occurred while creating the project.";
+                }
+            }
+            else
+            {
+                var updateDto = new UpdateMockProjectDto
+                {
+                    Name = model.Name,
+                    Description = model.Description,
+                    EnableCors = model.EnableCors,
+                    EnableLogging = model.EnableLogging,
+                    IsActive = true
+                };
+                var result = await ProjectService.UpdateAsync(ProjectId, updateDto);
+                if (!result.IsSuccess)
+                {
+                    errorMessage = result.Error ?? "An error occurred while updating the project.";
+                }
+                else
+                {
+                    project = result.Data;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"An error occurred: {ex.Message}";
+        }
+        finally
+        {
+            saving = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Cancel()
+    {
+        Navigation.NavigateTo("/projects");
+    }
+
+    private string GetMockBaseUrl()
+    {
+        if (project == null) return "";
+        var baseUrl = Navigation.BaseUri.TrimEnd('/');
+        return project.MockUrl;
+    }
+
+    private async Task CopyMockUrl()
+    {
+        // This would need JS interop to copy to clipboard
+        // For now, just show a message
+    }
+
+    private void AddEndpoint()
+    {
+        editingEndpoint = null;
+        activeTab = "general";
+        endpointModel = new CreateMockEndpointDto
+        {
+            ProjectId = ProjectId,
+            Method = HttpMethodType.GET
+        };
+        responseModel = new ResponseModel
+        {
+            StatusCode = 200,
+            ContentType = "application/json",
+            Body = "{\n  \"message\": \"Hello from MockHub!\",\n  \"id\": \"{{faker.random.uuid}}\"\n}"
+        };
+        responseHeaders = new List<HeaderModel>();
+        validationRules = new List<ValidationRuleModel>();
+        showEndpointModal = true;
+    }
+
+    private void EditEndpoint(Guid endpointId)
+    {
+        var endpoint = endpoints.FirstOrDefault(e => e.Id == endpointId);
+        if (endpoint != null)
+        {
+            editingEndpoint = endpoint;
+            activeTab = "general";
+            endpointLogs.Clear(); // Reset logs when switching endpoints
+            endpointModel = new CreateMockEndpointDto
+            {
+                ProjectId = ProjectId,
+                Name = endpoint.Name,
+                Description = endpoint.Description,
+                Route = endpoint.Route,
+                Method = endpoint.Method
+            };
+            
+            var firstResponse = endpoint.Responses?.FirstOrDefault();
+            responseModel = new ResponseModel
+            {
+                StatusCode = firstResponse?.StatusCode ?? 200,
+                ContentType = firstResponse?.ContentType ?? "application/json",
+                Body = firstResponse?.Body ?? "{}",
+                DelayMin = endpoint.DelayMin ?? 0,
+                DelayMax = endpoint.DelayMax ?? 0
+            };
+            
+            // Parse headers
+            responseHeaders = new List<HeaderModel>();
+            if (!string.IsNullOrEmpty(firstResponse?.Headers))
+            {
+                try
+                {
+                    var headers = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(firstResponse.Headers);
+                    if (headers != null)
+                    {
+                        foreach (var h in headers)
+                        {
+                            responseHeaders.Add(new HeaderModel { Key = h.Key, Value = h.Value });
+                        }
+                    }
+                }
+                catch { }
+            }
+            
+            validationRules = new List<ValidationRuleModel>();
+            showEndpointModal = true;
+        }
+    }
+
+    private async Task SaveEndpoint()
+    {
+        // Convert headers to JSON
+        var headersDict = responseHeaders
+            .Where(h => !string.IsNullOrEmpty(h.Key))
+            .ToDictionary(h => h.Key, h => h.Value ?? "");
+        var headersJson = headersDict.Count > 0 
+            ? System.Text.Json.JsonSerializer.Serialize(headersDict) 
+            : null;
+
+        if (editingEndpoint == null)
+        {
+            // Create new endpoint
+            endpointModel.DelayMin = responseModel.DelayMin;
+            endpointModel.DelayMax = responseModel.DelayMax;
+            
+            var result = await EndpointService.CreateWithResponseAsync(
+                endpointModel,
+                responseModel.StatusCode,
+                responseModel.ContentType,
+                responseModel.Body,
+                headersJson);
+                
+            if (result.IsSuccess)
+            {
+                endpoints.Add(result.Data!);
+            }
+        }
+        else
+        {
+            // Update existing endpoint
+            var updateDto = new UpdateMockEndpointDto
+            {
+                Name = endpointModel.Name,
+                Description = endpointModel.Description,
+                Route = endpointModel.Route,
+                Method = endpointModel.Method,
+                IsActive = true,
+                Order = editingEndpoint.Order,
+                DelayMin = responseModel.DelayMin,
+                DelayMax = responseModel.DelayMax
+            };
+            
+            var result = await EndpointService.UpdateWithResponseAsync(
+                editingEndpoint.Id,
+                updateDto,
+                responseModel.StatusCode,
+                responseModel.ContentType,
+                responseModel.Body,
+                headersJson);
+                
+            if (result.IsSuccess)
+            {
+                var index = endpoints.FindIndex(e => e.Id == editingEndpoint.Id);
+                if (index >= 0)
+                {
+                    endpoints[index] = result.Data!;
+                }
+            }
+        }
+        CloseEndpointModal();
+    }
+
+    private async Task DeleteEndpoint(Guid endpointId)
+    {
+        var result = await EndpointService.DeleteAsync(endpointId);
+        if (result.IsSuccess)
+        {
+            endpoints.RemoveAll(e => e.Id == endpointId);
+        }
+    }
+
+    private void CloseEndpointModal()
+    {
+        showEndpointModal = false;
+        editingEndpoint = null;
+    }
+
+    private void AddHeader()
+    {
+        responseHeaders.Add(new HeaderModel());
+    }
+
+    private void RemoveHeader(HeaderModel header)
+    {
+        responseHeaders.Remove(header);
+    }
+
+    private void AddValidationRule()
+    {
+        validationRules.Add(new ValidationRuleModel { Location = "Query", DataType = "String" });
+    }
+
+    private void RemoveValidationRule(ValidationRuleModel rule)
+    {
+        validationRules.Remove(rule);
+    }
+
+    private async Task InsertSampleContent()
+    {
+        var sample = GetSampleContent(responseModel.ContentType);
+        responseModel.Body = sample;
+        if (monacoEditor != null)
+        {
+            await monacoEditor.SetValue(sample);
+        }
+    }
+
+    private string GetSampleContent(string contentType)
+    {
+        return contentType switch
+        {
+            "application/json" => @"{
+  ""success"": true,
+  ""data"": {
+    ""id"": ""{{faker.random.uuid}}"",
+    ""name"": ""{{faker.name.fullName}}"",
+    ""email"": ""{{faker.internet.email}}"",
+    ""avatar"": ""{{faker.image.avatar}}"",
+    ""createdAt"": ""{{faker.date.recent}}""
+  },
+  ""meta"": {
+    ""requestId"": ""{{request.id}}"",
+    ""timestamp"": ""{{now}}""
+  }
+}",
+            "application/xml" or "text/xml" => @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<response>
+  <success>true</success>
+  <data>
+    <id>{{faker.random.uuid}}</id>
+    <name>{{faker.name.fullName}}</name>
+    <email>{{faker.internet.email}}</email>
+    <createdAt>{{faker.date.recent}}</createdAt>
+  </data>
+  <meta>
+    <requestId>{{request.id}}</requestId>
+    <timestamp>{{now}}</timestamp>
+  </meta>
+</response>",
+            "text/html" => @"<!DOCTYPE html>
+<html>
+<head>
+  <title>MockHub Response</title>
+</head>
+<body>
+  <h1>Hello, {{faker.name.fullName}}!</h1>
+  <p>Email: {{faker.internet.email}}</p>
+  <p>Created: {{now}}</p>
+</body>
+</html>",
+            "text/plain" => @"MockHub Response
+================
+ID: {{faker.random.uuid}}
+Name: {{faker.name.fullName}}
+Email: {{faker.internet.email}}
+Date: {{now}}",
+            "text/javascript" => @"// MockHub JavaScript Response
+const data = {
+  id: '{{faker.random.uuid}}',
+  name: '{{faker.name.fullName}}',
+  email: '{{faker.internet.email}}',
+  timestamp: '{{now}}'
+};
+
+console.log(data);",
+            "text/css" => @"/* MockHub CSS Response */
+.user-card {
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.user-name {
+  font-size: 18px;
+  color: #333;
+}",
+            _ => "MockHub Response"
+        };
+    }
+
+    private void SetTabGeneral() => activeTab = "general";
+    private void SetTabResponse() => activeTab = "response";
+    private void SetTabHeaders() => activeTab = "headers";
+    private void SetTabRules() => activeTab = "rules";
+    private async Task SetTabLogs()
+    {
+        activeTab = "logs";
+        if (editingEndpoint != null && endpointLogs.Count == 0)
+        {
+            await LoadEndpointLogs();
+        }
+    }
+    
+    private async Task LoadEndpointLogs()
+    {
+        if (editingEndpoint == null) return;
+        
+        loadingLogs = true;
+        StateHasChanged();
+        
+        var result = await LogService.GetEndpointLogsAsync(editingEndpoint.Id, 1, 20);
+        if (result.IsSuccess && result.Data != null)
+        {
+            endpointLogs = result.Data;
+        }
+        
+        loadingLogs = false;
+    }
+    
+    private string GetLogStatusBadgeClass(int statusCode)
+    {
+        return statusCode switch
+        {
+            >= 200 and < 300 => "badge-success",
+            >= 300 and < 400 => "badge-info",
+            >= 400 and < 500 => "badge-warning",
+            >= 500 => "badge-danger",
+            _ => "badge-secondary"
+        };
+    }
+
+    private async Task OnContentTypeChanged()
+    {
+        if (monacoEditor != null)
+        {
+            var language = GetLanguageFromContentType(responseModel.ContentType);
+            await monacoEditor.SetLanguage(language);
+        }
+    }
+
+    private string GetLanguageFromContentType(string contentType)
+    {
+        return contentType switch
+        {
+            "application/json" => "json",
+            "application/xml" => "xml",
+            "text/xml" => "xml",
+            "text/html" => "html",
+            "text/plain" => "plaintext",
+            "text/javascript" => "javascript",
+            "application/javascript" => "javascript",
+            "text/css" => "css",
+            _ => "plaintext"
+        };
+    }
+
+    private async Task FormatDocument()
+    {
+        if (monacoEditor != null)
+        {
+            await monacoEditor.FormatDocument();
+        }
+    }
+
+    // Helper Models
+    private class ResponseModel
+    {
+        public int StatusCode { get; set; } = 200;
+        public string ContentType { get; set; } = "application/json";
+        public string? Body { get; set; }
+        public int DelayMin { get; set; }
+        public int DelayMax { get; set; }
+    }
+
+    private class HeaderModel
+    {
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+
+    private class ValidationRuleModel
+    {
+        public string ParameterName { get; set; } = "";
+        public string Location { get; set; } = "Query";
+        public string DataType { get; set; } = "String";
+        public bool IsRequired { get; set; }
+    }
+}

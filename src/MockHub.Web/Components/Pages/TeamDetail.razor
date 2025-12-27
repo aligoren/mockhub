@@ -1,0 +1,796 @@
+@page "/teams/{TeamId:guid}"
+@rendermode InteractiveServer
+@using MockHub.Application.Interfaces
+@using MockHub.Application.DTOs.User
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject ITeamService TeamService
+@inject IMockProjectService ProjectService
+@inject IUserService UserService
+@inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>@(team?.Name ?? "Team") - MockHub</PageTitle>
+
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-2">
+            <a href="/teams" class="btn btn-sm btn-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="19" y1="12" x2="5" y2="12"/>
+                    <polyline points="12 19 5 12 12 5"/>
+                </svg>
+            </a>
+            <h1 class="page-title">@(team?.Name ?? "Team")</h1>
+        </div>
+        @if (team != null)
+        {
+            <div class="flex items-center gap-2 mt-1">
+                <code class="mock-url">/@team.Slug</code>
+                <span class="text-muted">· @team.MemberCount members · @team.ProjectCount projects</span>
+            </div>
+        }
+    </div>
+    <div class="flex gap-2">
+        <button class="btn btn-primary" @onclick="ShowNewProjectModal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Project
+        </button>
+    </div>
+</div>
+
+@if (loading)
+{
+    <div class="flex items-center justify-center" style="padding: 3rem;">
+        <div class="spinner"></div>
+    </div>
+}
+else if (team == null)
+{
+    <div class="card">
+        <div class="empty-state">
+            <div class="empty-state-title">Team not found</div>
+            <a href="/teams" class="btn btn-primary mt-4">Back to Teams</a>
+        </div>
+    </div>
+}
+else
+{
+    <div class="grid" style="grid-template-columns: 1fr 350px; gap: 1.5rem;">
+        <!-- Projects Section -->
+        <div>
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="card-title" style="margin: 0;">Projects</h3>
+                    <span class="badge badge-outline">@team.ProjectCount projects</span>
+                </div>
+                
+                @if (team.Projects.Any())
+                {
+                    <div class="project-list">
+                        @foreach (var project in team.Projects)
+                        {
+                            <div class="project-card" @onclick="() => NavigateToProject(project.Id)">
+                                <div class="flex items-center justify-between">
+                                    <div>
+                                        <h4 style="margin: 0 0 0.25rem 0;">@project.Name</h4>
+                                        <code class="text-sm text-muted">@project.MockUrl</code>
+                                    </div>
+                                    <div class="flex items-center gap-2">
+                                        <span class="badge badge-sm @(project.IsActive ? "badge-success" : "badge-secondary")">
+                                            @(project.IsActive ? "Active" : "Inactive")
+                                        </span>
+                                        <span class="badge badge-sm badge-outline">@project.EndpointCount endpoint</span>
+                                    </div>
+                                </div>
+                                @if (!string.IsNullOrEmpty(project.Description))
+                                {
+                                    <p class="text-muted text-sm mt-2" style="margin-bottom: 0;">@project.Description</p>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="empty-state" style="padding: 2rem;">
+                        <div class="empty-state-title">No projects yet</div>
+                        <p>Start by adding a project to this team</p>
+                        <button class="btn btn-primary mt-4" @onclick="ShowNewProjectModal">Create Project</button>
+                    </div>
+                }
+            </div>
+        </div>
+        
+        <!-- Team Info & Members Section -->
+        <div>
+            <!-- Team Info (Read-only for non-admins) -->
+            <div class="card mb-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="card-title" style="margin: 0;">Team Information</h3>
+                    @if (canManageTeam)
+                    {
+                        <span class="badge badge-outline badge-sm">Editable</span>
+                    }
+                </div>
+                
+                @if (canManageTeam)
+                {
+                    <div class="form-group">
+                        <label class="form-label">Team Name</label>
+                        <input type="text" class="form-control" @bind="editModel.Name" />
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" @bind="editModel.Description" rows="2"></textarea>
+                    </div>
+                    
+                    <button class="btn btn-primary btn-block" @onclick="SaveTeam">Save</button>
+                }
+                else
+                {
+                    <div class="team-info-readonly">
+                        <div class="info-row">
+                            <span class="info-label">Team Name</span>
+                            <span class="info-value">@team?.Name</span>
+                        </div>
+                        @if (!string.IsNullOrEmpty(team?.Description))
+                        {
+                            <div class="info-row">
+                                <span class="info-label">Description</span>
+                                <span class="info-value">@team.Description</span>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+            
+            <!-- Members -->
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="card-title" style="margin: 0;">Members</h3>
+                    @if (canManageTeam)
+                    {
+                        <button class="btn btn-sm btn-outline" @onclick="ShowAddMemberModal">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"/>
+                                <line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            Add
+                        </button>
+                    }
+                </div>
+                
+                @if (members.Any())
+                {
+                    <div class="member-list">
+                        @foreach (var member in members)
+                        {
+                            <div class="member-item">
+                                <div class="member-avatar">
+                                    @member.UserName.Substring(0, 1).ToUpper()
+                                </div>
+                                <div class="member-info">
+                                    <div class="member-name">@member.UserName</div>
+                                    <div class="member-email">@member.UserEmail</div>
+                                </div>
+                                <span class="badge badge-sm @GetRoleBadgeClass(member.Role)">@member.Role</span>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted text-center">No members yet</p>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@if (showProjectModal)
+{
+    <div class="modal-backdrop" @onclick="CloseProjectModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 class="modal-title">New Project</h3>
+                <button class="btn-icon" @onclick="CloseProjectModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Project Name *</label>
+                    <input type="text" class="form-control" @bind="projectModel.Name" placeholder="API Project" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" @bind="projectModel.Description" rows="2" placeholder="Project description..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" @onclick="CloseProjectModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="CreateProject">Create</button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showMemberModal)
+{
+    <div class="modal-backdrop" @onclick="CloseMemberModal">
+        <div class="modal" @onclick:stopPropagation="true">
+            <div class="modal-header">
+                <h3 class="modal-title">Add Member</h3>
+                <button class="btn-icon" @onclick="CloseMemberModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Select User *</label>
+                    @if (selectedUser != null)
+                    {
+                        <div class="selected-user-card">
+                            <div class="selected-user-avatar">
+                                @(selectedUser.FullName.Length > 0 ? selectedUser.FullName.Substring(0, 1).ToUpper() : "?")
+                            </div>
+                            <div class="selected-user-info">
+                                <div class="selected-user-name">@selectedUser.FullName</div>
+                                <div class="selected-user-email">@selectedUser.Email</div>
+                            </div>
+                            <button type="button" class="btn-clear-user" @onclick="ClearSelectedUser" title="Change">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="18" y1="6" x2="6" y2="18"/>
+                                    <line x1="6" y1="6" x2="18" y2="18"/>
+                                </svg>
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="user-search-container">
+                            <div class="user-search-input-wrapper">
+                                <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="11" cy="11" r="8"/>
+                                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                </svg>
+                                <input type="text" class="form-control user-search-input" 
+                                       @bind="userSearchTerm" 
+                                       @bind:event="oninput"
+                                       @onclick="OpenUserDropdown"
+                                       @onfocusin="OpenUserDropdown"
+                                       placeholder="Search by name or email..." />
+                            </div>
+                            @if (showUserDropdown && (filteredUsers.Any() || !string.IsNullOrEmpty(userSearchTerm)))
+                            {
+                                <div class="user-search-dropdown">
+                                    @if (filteredUsers.Any())
+                                    {
+                                        @foreach (var user in filteredUsers)
+                                        {
+                                            <div class="user-dropdown-item" @onclick="() => SelectUser(user)">
+                                                <div class="user-dropdown-avatar">
+                                                    @(user.FullName.Length > 0 ? user.FullName.Substring(0, 1).ToUpper() : "?")
+                                                </div>
+                                                <div class="user-dropdown-info">
+                                                    <div class="user-dropdown-name">@user.FullName</div>
+                                                    <div class="user-dropdown-email">@user.Email</div>
+                                                </div>
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="user-dropdown-empty">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                                <circle cx="11" cy="11" r="8"/>
+                                                <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                                            </svg>
+                                            <span>User not found</span>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <small class="text-muted mt-1">Start typing or select from list</small>
+                    }
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <select class="form-control" @bind="memberModel.Role">
+                        <option value="Member">Member</option>
+                        <option value="Admin">Admin</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" @onclick="CloseMemberModal">Cancel</button>
+                <button class="btn btn-primary" @onclick="AddMember" disabled="@(selectedUser == null)">Add</button>
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .project-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .project-card {
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .project-card:hover {
+        border-color: var(--primary);
+        transform: translateX(4px);
+    }
+    
+    .member-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .member-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.5rem;
+        border-radius: 8px;
+        transition: background 0.2s;
+    }
+    
+    .member-item:hover {
+        background: var(--hover-bg);
+    }
+    
+    .member-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary), #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+    
+    .member-info {
+        flex: 1;
+    }
+    
+    .member-name {
+        font-weight: 500;
+    }
+    
+    .member-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+    
+    .badge-sm {
+        font-size: 0.7rem;
+        padding: 0.2rem 0.5rem;
+    }
+    
+    .mock-url {
+        background: var(--card-bg);
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+    }
+
+    /* User Search Styles */
+    .user-search-container {
+        position: relative;
+    }
+
+    .user-search-input-wrapper {
+        position: relative;
+    }
+
+    .user-search-input-wrapper .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        pointer-events: none;
+    }
+
+    .user-search-input {
+        padding-left: 38px !important;
+    }
+
+    .user-search-dropdown {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: var(--bg-secondary, #1e1e2e);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        max-height: 240px;
+        overflow-y: auto;
+        z-index: 1000;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    }
+
+    .user-dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        cursor: pointer;
+        transition: background 0.15s ease;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .user-dropdown-item:last-child {
+        border-bottom: none;
+    }
+
+    .user-dropdown-item:hover {
+        background: rgba(99, 102, 241, 0.15);
+    }
+
+    .user-dropdown-avatar {
+        width: 36px;
+        height: 36px;
+        min-width: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary), #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 14px;
+    }
+
+    .user-dropdown-info {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .user-dropdown-name {
+        font-weight: 500;
+        font-size: 14px;
+        color: var(--text-color);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .user-dropdown-email {
+        font-size: 12px;
+        color: var(--text-muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .user-dropdown-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        padding: 24px;
+        color: var(--text-muted);
+        font-size: 14px;
+    }
+
+    /* Selected User Card */
+    .selected-user-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px;
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 8px;
+    }
+
+    .selected-user-avatar {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary), #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 16px;
+    }
+
+    .selected-user-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .selected-user-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--text-color);
+    }
+
+    .selected-user-email {
+        font-size: 12px;
+        color: var(--text-muted);
+    }
+
+    .btn-clear-user {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 6px;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.15s ease;
+    }
+
+    .btn-clear-user:hover {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+    }
+
+    /* Slug display */
+    .slug-display {
+        display: block;
+        padding: 0.5rem 0.75rem;
+        background: var(--bg-secondary, #1e1e2e);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.875rem;
+    }
+
+    /* Readonly team info */
+    .team-info-readonly {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .info-row {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .info-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .info-value {
+        font-size: 0.9375rem;
+        color: var(--text-color);
+    }
+
+    .d-block {
+        display: block;
+    }
+</style>
+
+@code {
+    [Parameter] public Guid TeamId { get; set; }
+    
+    private TeamDto? team;
+    private List<TeamMemberDto> members = new();
+    private List<UserDto> allUsers = new();
+    private bool loading = true;
+    private string? userId;
+    private bool isAdmin = false;
+    private bool isTeamAdmin = false;
+    
+    private UpdateTeamDto editModel = new();
+    private bool showProjectModal = false;
+    private bool showMemberModal = false;
+    private CreateMockProjectDto projectModel = new();
+    private AddTeamMemberDto memberModel = new();
+    
+    // User search
+    private string userSearchTerm = "";
+    private string? selectedUserId;
+    private UserDto? selectedUser;
+    private bool showUserDropdown = false;
+
+    private IEnumerable<UserDto> filteredUsers => string.IsNullOrWhiteSpace(userSearchTerm)
+        ? allUsers.Where(u => !members.Any(m => m.UserId == u.Id)).Take(8)
+        : allUsers.Where(u => 
+            !members.Any(m => m.UserId == u.Id) &&
+            (u.FullName.Contains(userSearchTerm, StringComparison.OrdinalIgnoreCase) ||
+             u.Email.Contains(userSearchTerm, StringComparison.OrdinalIgnoreCase)))
+          .Take(8);
+
+    // Does the user have permission to change team settings and add members?
+    private bool canManageTeam => isAdmin || isTeamAdmin;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        
+        if (!string.IsNullOrEmpty(userId))
+        {
+            // Is global admin?
+            isAdmin = await UserService.IsAdminAsync(userId);
+            // Is team admin? (Owner or Admin)
+            isTeamAdmin = await TeamService.IsUserTeamAdminAsync(TeamId, userId);
+        }
+        
+        await LoadTeam();
+        await LoadMembers();
+        
+        // Load users only if admin
+        if (canManageTeam)
+        {
+            await LoadUsers();
+        }
+        
+        loading = false;
+    }
+
+    private async Task LoadUsers()
+    {
+        var result = await UserService.GetAllUsersAsync();
+        if (result.IsSuccess)
+        {
+            allUsers = result.Data?.Where(u => u.IsActive).ToList() ?? new();
+        }
+    }
+
+    private void OpenUserDropdown()
+    {
+        showUserDropdown = true;
+        StateHasChanged();
+    }
+
+    private void SelectUser(UserDto user)
+    {
+        selectedUserId = user.Id;
+        selectedUser = user;
+        memberModel.Email = user.Email;
+        userSearchTerm = "";
+        showUserDropdown = false;
+    }
+
+    private void ClearSelectedUser()
+    {
+        selectedUserId = null;
+        selectedUser = null;
+        memberModel.Email = "";
+        showUserDropdown = false;
+    }
+
+    private async Task LoadTeam()
+    {
+        var result = await TeamService.GetByIdAsync(TeamId);
+        if (result.IsSuccess && result.Data != null)
+        {
+            team = result.Data;
+            editModel = new UpdateTeamDto
+            {
+                Name = team.Name,
+                Description = team.Description,
+                IsActive = team.IsActive
+            };
+        }
+    }
+
+    private async Task LoadMembers()
+    {
+        var result = await TeamService.GetMembersAsync(TeamId);
+        if (result.IsSuccess)
+        {
+            members = result.Data ?? new List<TeamMemberDto>();
+        }
+    }
+
+    private async Task SaveTeam()
+    {
+        var result = await TeamService.UpdateAsync(TeamId, editModel);
+        if (result.IsSuccess)
+        {
+            team = result.Data;
+        }
+    }
+
+    private void ShowNewProjectModal()
+    {
+        projectModel = new CreateMockProjectDto
+        {
+            TeamId = TeamId,
+            EnableCors = true,
+            EnableLogging = true
+        };
+        showProjectModal = true;
+    }
+
+    private void CloseProjectModal()
+    {
+        showProjectModal = false;
+    }
+
+    private async Task CreateProject()
+    {
+        if (string.IsNullOrEmpty(projectModel.Name) || string.IsNullOrEmpty(userId))
+            return;
+
+        var result = await ProjectService.CreateAsync(userId, projectModel);
+        if (result.IsSuccess)
+        {
+            await LoadTeam();
+            CloseProjectModal();
+            Navigation.NavigateTo($"/projects/{result.Data!.Id}");
+        }
+    }
+
+    private void ShowAddMemberModal()
+    {
+        memberModel = new AddTeamMemberDto { Role = "Member" };
+        selectedUserId = null;
+        selectedUser = null;
+        userSearchTerm = "";
+        showUserDropdown = false;
+        showMemberModal = true;
+    }
+
+    private void CloseMemberModal()
+    {
+        showMemberModal = false;
+        selectedUserId = null;
+        selectedUser = null;
+        userSearchTerm = "";
+        showUserDropdown = false;
+    }
+
+    private async Task AddMember()
+    {
+        if (selectedUser == null || string.IsNullOrEmpty(memberModel.Email))
+            return;
+
+        var result = await TeamService.AddMemberAsync(TeamId, memberModel);
+        if (result.IsSuccess)
+        {
+            await LoadMembers();
+            await LoadUsers();
+            CloseMemberModal();
+        }
+    }
+
+    private void NavigateToProject(Guid projectId)
+    {
+        Navigation.NavigateTo($"/projects/{projectId}");
+    }
+
+    private string GetRoleBadgeClass(string role)
+    {
+        return role switch
+        {
+            "Owner" => "badge-primary",
+            "Admin" => "badge-warning",
+            _ => "badge-secondary"
+        };
+    }
+}
+
