@@ -120,30 +120,33 @@
                                     <span class="auto-detected-badge">Auto-detected</span>
                                 }
                             </label>
-                            <div class="custom-select">
-                                <select @bind="importFormat">
-                                    <option value="postman">Postman Collection (v2.1)</option>
-                                    <option value="openapi-json">OpenAPI Specification (JSON)</option>
-                                    <option value="openapi-yaml">OpenAPI Specification (YAML)</option>
-                                </select>
-                                <svg class="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"/>
-                                </svg>
+                            <div class="dropdown w-100">
+                                <button class="btn btn-dropdown dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span>@GetFormatDisplayName(importFormat)</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-dark w-100">
+                                    <li><button class="dropdown-item @(importFormat == "postman" ? "active" : "")" type="button" @onclick='() => importFormat = "postman"'>Postman Collection (v2.1)</button></li>
+                                    <li><button class="dropdown-item @(importFormat == "openapi-json" ? "active" : "")" type="button" @onclick='() => importFormat = "openapi-json"'>OpenAPI Specification (JSON)</button></li>
+                                    <li><button class="dropdown-item @(importFormat == "openapi-yaml" ? "active" : "")" type="button" @onclick='() => importFormat = "openapi-yaml"'>OpenAPI Specification (YAML)</button></li>
+                                </ul>
                             </div>
                         </div>
                         <div class="config-item">
                             <label class="config-label">Target Project</label>
-                            <div class="custom-select">
-                                <select @bind="selectedProjectId">
-                                    <option value="">Select a project...</option>
+                            <div class="dropdown w-100">
+                                <button class="btn btn-dropdown dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                                    <span>@(string.IsNullOrEmpty(selectedProjectId) ? "Select a project..." : GetProjectName(selectedProjectId))</span>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-dark w-100">
                                     @foreach (var project in userProjects)
                                     {
-                                        <option value="@project.Id">@project.Name</option>
+                                        <li><button class="dropdown-item @(selectedProjectId == project.Id.ToString() ? "active" : "")" type="button" @onclick="() => selectedProjectId = project.Id.ToString()">@project.Name</button></li>
                                     }
-                                </select>
-                                <svg class="select-arrow" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="6 9 12 15 18 9"/>
-                                </svg>
+                                    @if (!userProjects.Any())
+                                    {
+                                        <li><span class="dropdown-item-text text-muted">No projects available</span></li>
+                                    }
+                                </ul>
                             </div>
                         </div>
                     </div>
@@ -520,56 +523,83 @@
         font-size: 0.875rem;
     }
     
-    /* Custom Select Styles */
-    .custom-select {
-        position: relative;
+    /* Bootstrap Dropdown Overrides */
+    .btn-dropdown {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         width: 100%;
-    }
-    
-    .custom-select select {
-        width: 100%;
-        padding: 0.75rem 2.5rem 0.75rem 1rem;
+        padding: 0.75rem 1rem;
         font-size: 0.875rem;
-        font-family: inherit;
+        font-weight: 400;
+        text-align: left;
         color: var(--text-color);
-        background: var(--bg-color);
+        background-color: var(--bg-color);
         border: 1px solid var(--border-color);
         border-radius: var(--radius);
-        cursor: pointer;
-        appearance: none;
-        -webkit-appearance: none;
-        -moz-appearance: none;
         transition: border-color 0.2s, box-shadow 0.2s;
     }
     
-    .custom-select select:hover {
+    .btn-dropdown:hover {
+        color: var(--text-color);
+        background-color: var(--bg-color);
         border-color: var(--primary-color);
     }
     
-    .custom-select select:focus {
-        outline: none;
+    .btn-dropdown:focus {
+        color: var(--text-color);
+        background-color: var(--bg-color);
         border-color: var(--primary-color);
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     }
     
-    .custom-select select option {
-        padding: 0.5rem;
-        background: var(--card-bg);
-        color: var(--text-color);
+    .btn-dropdown.show {
+        border-color: var(--primary-color);
     }
     
-    .select-arrow {
-        position: absolute;
-        right: 0.75rem;
-        top: 50%;
-        transform: translateY(-50%);
-        pointer-events: none;
-        color: var(--text-muted);
+    .btn-dropdown::after {
+        margin-left: auto;
         transition: transform 0.2s;
     }
     
-    .custom-select select:focus + .select-arrow {
-        color: var(--primary-color);
+    .btn-dropdown.show::after {
+        transform: rotate(180deg);
+    }
+    
+    .dropdown-menu-dark {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+        padding: 0.5rem;
+    }
+    
+    .dropdown-menu-dark .dropdown-item {
+        color: var(--text-color);
+        padding: 0.625rem 1rem;
+        border-radius: calc(var(--radius) - 2px);
+        font-size: 0.875rem;
+        transition: background-color 0.15s;
+    }
+    
+    .dropdown-menu-dark .dropdown-item:hover,
+    .dropdown-menu-dark .dropdown-item:focus {
+        color: var(--text-color);
+        background-color: var(--bg-hover);
+    }
+    
+    .dropdown-menu-dark .dropdown-item.active {
+        color: white;
+        background-color: var(--primary-color);
+    }
+    
+    .dropdown-menu-dark .dropdown-item-text {
+        padding: 0.625rem 1rem;
+        font-size: 0.875rem;
+    }
+    
+    .w-100 {
+        width: 100% !important;
     }
     
     .auto-detected-badge {
@@ -1114,4 +1144,19 @@
         >= 500 => "5xx",
         _ => "2xx"
     };
+    
+    private string GetFormatDisplayName(string format) => format switch
+    {
+        "postman" => "Postman Collection (v2.1)",
+        "openapi-json" => "OpenAPI Specification (JSON)",
+        "openapi-yaml" => "OpenAPI Specification (YAML)",
+        _ => "Select format..."
+    };
+    
+    private string GetProjectName(string? projectId)
+    {
+        if (string.IsNullOrEmpty(projectId)) return "Select a project...";
+        var project = userProjects.FirstOrDefault(p => p.Id.ToString() == projectId);
+        return project?.Name ?? "Select a project...";
+    }
 }
