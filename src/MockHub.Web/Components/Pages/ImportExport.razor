@@ -117,7 +117,7 @@
                 <!-- Configuration -->
                 <div class="config-section">
                     <div class="config-row">
-                        <div class="config-item">
+                        <div class="config-item @(formatDropdownOpen ? "dropdown-active" : "")" style="z-index: @(formatDropdownOpen ? 100 : 2)">
                             <label class="config-label">
                                 Import Format
                                 @if (formatAutoDetected)
@@ -142,7 +142,7 @@
                                 }
                             </div>
                         </div>
-                        <div class="config-item">
+                        <div class="config-item @(projectDropdownOpen ? "dropdown-active" : "")" style="z-index: @(projectDropdownOpen ? 100 : 1)">
                             <label class="config-label">Target Project</label>
                             <div class="custom-dropdown @(projectDropdownOpen ? "open" : "")">
                                 <button type="button" class="custom-dropdown-toggle" @onclick="ToggleProjectDropdown" @onclick:stopPropagation="true">
@@ -475,11 +475,6 @@
         flex-direction: column;
         gap: 0.5rem;
         position: relative;
-        z-index: 1;
-    }
-    
-    .config-item:has(.custom-dropdown.open) {
-        z-index: 100;
     }
     }
     
@@ -610,14 +605,19 @@
         left: 0;
         right: 0;
         z-index: 9999;
-        background-color: var(--card-bg);
+        background: #1e2130;
         border: 1px solid var(--primary-color);
         border-top: none;
         border-bottom-left-radius: var(--radius);
         border-bottom-right-radius: var(--radius);
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
         max-height: 250px;
         overflow-y: auto;
+        isolation: isolate;
+    }
+    
+    :root.light-theme .custom-dropdown-menu {
+        background: #ffffff;
     }
     
     .custom-dropdown-item {
@@ -626,20 +626,29 @@
         padding: 0.75rem 1rem;
         font-size: 0.875rem;
         text-align: left;
-        color: var(--text-color);
-        background-color: var(--card-bg);
+        color: #e4e6eb;
+        background: #1e2130;
         border: none;
         cursor: pointer;
         transition: background-color 0.15s;
     }
     
     .custom-dropdown-item:hover {
-        background-color: var(--bg-hover);
+        background: #2a2d3e;
     }
     
     .custom-dropdown-item.active {
-        background-color: var(--primary-color);
+        background: var(--primary-color);
         color: white;
+    }
+    
+    :root.light-theme .custom-dropdown-item {
+        color: #1f2937;
+        background: #ffffff;
+    }
+    
+    :root.light-theme .custom-dropdown-item:hover {
+        background: #f3f4f6;
     }
     
     .custom-dropdown-empty {
