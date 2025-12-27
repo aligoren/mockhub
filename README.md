@@ -194,7 +194,7 @@ Comprehensive documentation is available in the [docs/](docs/) directory:
 - **[Path-Based Routing](docs/path-based-routing.md)** - URL routing system
 - **[Docker Deployment](docs/docker-deployment.md)** - Containerization and orchestration
 
-For general usage information, see [DOCUMENTATION.md](DOCUMENTATION.md).
+For general usage information, see [DOCUMENTATION.md](docs/DOCUMENTATION.md).
 
 ## License
 
