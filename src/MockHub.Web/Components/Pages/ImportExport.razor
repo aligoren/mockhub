@@ -13,6 +13,11 @@
 
 <PageTitle>Import Collections - MockHub</PageTitle>
 
+@if (formatDropdownOpen || projectDropdownOpen)
+{
+    <div class="dropdown-overlay" @onclick="CloseDropdowns"></div>
+}
+
 <div class="page-header">
     <div>
         <div class="flex items-center gap-2">
@@ -120,33 +125,45 @@
                                     <span class="auto-detected-badge">Auto-detected</span>
                                 }
                             </label>
-                            <div class="dropdown w-100">
-                                <button class="btn btn-dropdown dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <div class="custom-dropdown @(formatDropdownOpen ? "open" : "")">
+                                <button type="button" class="custom-dropdown-toggle" @onclick="ToggleFormatDropdown" @onclick:stopPropagation="true">
                                     <span>@GetFormatDisplayName(importFormat)</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropdown-arrow">
+                                        <polyline points="6 9 12 15 18 9"/>
+                                    </svg>
                                 </button>
-                                <ul class="dropdown-menu dropdown-menu-dark w-100">
-                                    <li><button class="dropdown-item @(importFormat == "postman" ? "active" : "")" type="button" @onclick='() => importFormat = "postman"'>Postman Collection (v2.1)</button></li>
-                                    <li><button class="dropdown-item @(importFormat == "openapi-json" ? "active" : "")" type="button" @onclick='() => importFormat = "openapi-json"'>OpenAPI Specification (JSON)</button></li>
-                                    <li><button class="dropdown-item @(importFormat == "openapi-yaml" ? "active" : "")" type="button" @onclick='() => importFormat = "openapi-yaml"'>OpenAPI Specification (YAML)</button></li>
-                                </ul>
+                                @if (formatDropdownOpen)
+                                {
+                                    <div class="custom-dropdown-menu">
+                                        <button type="button" class="custom-dropdown-item @(importFormat == "postman" ? "active" : "")" @onclick='() => SelectFormat("postman")'>Postman Collection (v2.1)</button>
+                                        <button type="button" class="custom-dropdown-item @(importFormat == "openapi-json" ? "active" : "")" @onclick='() => SelectFormat("openapi-json")'>OpenAPI Specification (JSON)</button>
+                                        <button type="button" class="custom-dropdown-item @(importFormat == "openapi-yaml" ? "active" : "")" @onclick='() => SelectFormat("openapi-yaml")'>OpenAPI Specification (YAML)</button>
+                                    </div>
+                                }
                             </div>
                         </div>
                         <div class="config-item">
                             <label class="config-label">Target Project</label>
-                            <div class="dropdown w-100">
-                                <button class="btn btn-dropdown dropdown-toggle w-100" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                            <div class="custom-dropdown @(projectDropdownOpen ? "open" : "")">
+                                <button type="button" class="custom-dropdown-toggle" @onclick="ToggleProjectDropdown" @onclick:stopPropagation="true">
                                     <span>@(string.IsNullOrEmpty(selectedProjectId) ? "Select a project..." : GetProjectName(selectedProjectId))</span>
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="dropdown-arrow">
+                                        <polyline points="6 9 12 15 18 9"/>
+                                    </svg>
                                 </button>
-                                <ul class="dropdown-menu dropdown-menu-dark w-100">
-                                    @foreach (var project in userProjects)
-                                    {
-                                        <li><button class="dropdown-item @(selectedProjectId == project.Id.ToString() ? "active" : "")" type="button" @onclick="() => selectedProjectId = project.Id.ToString()">@project.Name</button></li>
-                                    }
-                                    @if (!userProjects.Any())
-                                    {
-                                        <li><span class="dropdown-item-text text-muted">No projects available</span></li>
-                                    }
-                                </ul>
+                                @if (projectDropdownOpen)
+                                {
+                                    <div class="custom-dropdown-menu">
+                                        @foreach (var project in userProjects)
+                                        {
+                                            <button type="button" class="custom-dropdown-item @(selectedProjectId == project.Id.ToString() ? "active" : "")" @onclick="() => SelectProject(project.Id.ToString())">@project.Name</button>
+                                        }
+                                        @if (!userProjects.Any())
+                                        {
+                                            <div class="custom-dropdown-empty">No projects available</div>
+                                        }
+                                    </div>
+                                }
                             </div>
                         </div>
                     </div>
@@ -523,8 +540,13 @@
         font-size: 0.875rem;
     }
     
-    /* Bootstrap Dropdown Overrides */
-    .btn-dropdown {
+    /* Custom Dropdown */
+    .custom-dropdown {
+        position: relative;
+        width: 100%;
+    }
+    
+    .custom-dropdown-toggle {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -534,72 +556,92 @@
         font-weight: 400;
         text-align: left;
         color: var(--text-color);
-        background-color: var(--bg-color);
+        background-color: var(--card-bg);
         border: 1px solid var(--border-color);
         border-radius: var(--radius);
+        cursor: pointer;
         transition: border-color 0.2s, box-shadow 0.2s;
     }
     
-    .btn-dropdown:hover {
-        color: var(--text-color);
-        background-color: var(--bg-color);
+    .custom-dropdown-toggle:hover {
         border-color: var(--primary-color);
     }
     
-    .btn-dropdown:focus {
-        color: var(--text-color);
-        background-color: var(--bg-color);
+    .custom-dropdown-toggle:focus {
+        outline: none;
         border-color: var(--primary-color);
         box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
     }
     
-    .btn-dropdown.show {
+    .custom-dropdown.open .custom-dropdown-toggle {
         border-color: var(--primary-color);
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
     }
     
-    .btn-dropdown::after {
-        margin-left: auto;
+    .dropdown-arrow {
         transition: transform 0.2s;
+        color: var(--text-muted);
+        flex-shrink: 0;
     }
     
-    .btn-dropdown.show::after {
+    .custom-dropdown.open .dropdown-arrow {
         transform: rotate(180deg);
+        color: var(--primary-color);
     }
     
-    .dropdown-menu-dark {
+    .custom-dropdown-menu {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        z-index: 1000;
         background-color: var(--card-bg);
-        border: 1px solid var(--border-color);
-        border-radius: var(--radius);
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-        padding: 0.5rem;
+        border: 1px solid var(--primary-color);
+        border-top: none;
+        border-bottom-left-radius: var(--radius);
+        border-bottom-right-radius: var(--radius);
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        max-height: 250px;
+        overflow-y: auto;
     }
     
-    .dropdown-menu-dark .dropdown-item {
-        color: var(--text-color);
-        padding: 0.625rem 1rem;
-        border-radius: calc(var(--radius) - 2px);
+    .custom-dropdown-item {
+        display: block;
+        width: 100%;
+        padding: 0.75rem 1rem;
         font-size: 0.875rem;
+        text-align: left;
+        color: var(--text-color);
+        background: none;
+        border: none;
+        cursor: pointer;
         transition: background-color 0.15s;
     }
     
-    .dropdown-menu-dark .dropdown-item:hover,
-    .dropdown-menu-dark .dropdown-item:focus {
-        color: var(--text-color);
+    .custom-dropdown-item:hover {
         background-color: var(--bg-hover);
     }
     
-    .dropdown-menu-dark .dropdown-item.active {
-        color: white;
+    .custom-dropdown-item.active {
         background-color: var(--primary-color);
+        color: white;
     }
     
-    .dropdown-menu-dark .dropdown-item-text {
-        padding: 0.625rem 1rem;
+    .custom-dropdown-empty {
+        padding: 0.75rem 1rem;
         font-size: 0.875rem;
+        color: var(--text-muted);
+        text-align: center;
     }
     
-    .w-100 {
-        width: 100% !important;
+    .dropdown-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 999;
     }
     
     .auto-detected-badge {
@@ -915,6 +957,8 @@
     private HashSet<ParsedEndpoint> expandedEndpoints = new();
     private string? userId;
     private bool formatAutoDetected;
+    private bool formatDropdownOpen;
+    private bool projectDropdownOpen;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1158,5 +1202,36 @@
         if (string.IsNullOrEmpty(projectId)) return "Select a project...";
         var project = userProjects.FirstOrDefault(p => p.Id.ToString() == projectId);
         return project?.Name ?? "Select a project...";
+    }
+    
+    private void ToggleFormatDropdown()
+    {
+        formatDropdownOpen = !formatDropdownOpen;
+        projectDropdownOpen = false;
+    }
+    
+    private void ToggleProjectDropdown()
+    {
+        projectDropdownOpen = !projectDropdownOpen;
+        formatDropdownOpen = false;
+    }
+    
+    private void SelectFormat(string format)
+    {
+        importFormat = format;
+        formatDropdownOpen = false;
+        formatAutoDetected = false;
+    }
+    
+    private void SelectProject(string projectId)
+    {
+        selectedProjectId = projectId;
+        projectDropdownOpen = false;
+    }
+    
+    private void CloseDropdowns()
+    {
+        formatDropdownOpen = false;
+        projectDropdownOpen = false;
     }
 }
