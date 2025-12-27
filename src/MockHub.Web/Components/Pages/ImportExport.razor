@@ -1,0 +1,589 @@
+@page "/import-export"
+@rendermode InteractiveServer
+@using MockHub.Application.Interfaces
+@using MockHub.Application.DTOs.Project
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IImportService ImportService
+@inject IMockProjectService ProjectService
+@inject NavigationManager Navigation
+
+<PageTitle>Import Collections - MockHub</PageTitle>
+
+<div class="page-header">
+    <div>
+        <div class="flex items-center gap-2">
+            <a href="/" class="btn btn-sm btn-outline">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="19" y1="12" x2="5" y2="12"/>
+                    <polyline points="12 19 5 12 12 5"/>
+                </svg>
+            </a>
+            <h1 class="page-title">Import Collections</h1>
+        </div>
+        <p class="text-muted mt-1">Import Postman collections or OpenAPI specifications</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-error mb-4">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="15" y1="9" x2="9" y2="15"/>
+            <line x1="9" y1="9" x2="15" y2="15"/>
+        </svg>
+        <span>@errorMessage</span>
+        <button class="btn btn-sm btn-ghost" @onclick="() => errorMessage = null">Dismiss</button>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="alert alert-success mb-4">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+            <polyline points="22 4 12 14.01 9 11.01"/>
+        </svg>
+        <span>@successMessage</span>
+        <button class="btn btn-sm btn-ghost" @onclick="() => successMessage = null">Dismiss</button>
+    </div>
+}
+
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Import Configuration</h3>
+    </div>
+    <div class="card-body">
+        <div class="grid grid-cols-2 gap-4">
+            <div class="form-group">
+                <label class="form-label">Import Format</label>
+                <select class="form-select" @bind="importFormat">
+                    <option value="postman">Postman Collection (v2.1)</option>
+                    <option value="openapi-json">OpenAPI Specification (JSON)</option>
+                    <option value="openapi-yaml">OpenAPI Specification (YAML)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Target Project</label>
+                <select class="form-select" @bind="selectedProjectId">
+                    <option value="">Select a project...</option>
+                    @foreach (var project in userProjects)
+                    {
+                        <option value="@project.Id">@project.Name</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group mt-4">
+            <label class="form-label">Collection File</label>
+            <div class="file-upload-area @(isDragging ? "dragging" : "")"
+                 @ondragenter="HandleDragEnter"
+                 @ondragleave="HandleDragLeave"
+                 @ondragover:preventDefault="true"
+                 @ondrop="HandleDrop"
+                 @ondrop:preventDefault="true">
+                <InputFile OnChange="OnFileSelected" accept=".json,.yaml,.yml" class="file-input" />
+                <div class="file-upload-content">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="text-muted">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    @if (selectedFile != null)
+                    {
+                        <p class="text-primary mt-2">@selectedFile.Name</p>
+                        <p class="text-muted text-sm">@FormatFileSize(selectedFile.Size)</p>
+                    }
+                    else
+                    {
+                        <p class="mt-2">Drag and drop your file here, or click to browse</p>
+                        <p class="text-muted text-sm">Supported formats: JSON (.json), YAML (.yaml, .yml)</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-3 gap-4 mt-4">
+            <div class="form-check">
+                <input type="checkbox" id="skipDuplicates" class="form-check-input" @bind="importOptions.SkipDuplicates" />
+                <label for="skipDuplicates" class="form-check-label">Skip duplicate endpoints</label>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="createExamples" class="form-check-input" @bind="importOptions.CreateExamples" />
+                <label for="createExamples" class="form-check-label">Create example responses</label>
+            </div>
+            <div class="form-check">
+                <input type="checkbox" id="importHeaders" class="form-check-input" @bind="importOptions.ImportHeaders" />
+                <label for="importHeaders" class="form-check-label">Import headers</label>
+            </div>
+        </div>
+    </div>
+    <div class="card-footer">
+        <button class="btn btn-primary" @onclick="ParseCollection" disabled="@(isProcessing || selectedFile == null)">
+            @if (isProcessing)
+            {
+                <span class="spinner"></span>
+                <span>Processing...</span>
+            }
+            else
+            {
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                    <polyline points="10 9 9 9 8 9"/>
+                </svg>
+                <span>Parse Collection</span>
+            }
+        </button>
+    </div>
+</div>
+
+@if (parsedData != null)
+{
+    <div class="card mt-4">
+        <div class="card-header flex justify-between items-center">
+            <div>
+                <h3 class="card-title">Preview: @parsedData.CollectionName</h3>
+                @if (!string.IsNullOrEmpty(parsedData.Description))
+                {
+                    <p class="text-muted text-sm mt-1">@parsedData.Description</p>
+                }
+            </div>
+            <button class="btn btn-success" @onclick="ImportCollection" disabled="@(isProcessing || string.IsNullOrEmpty(selectedProjectId))">
+                @if (isProcessing)
+                {
+                    <span class="spinner"></span>
+                    <span>Importing...</span>
+                }
+                else
+                {
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    <span>Import to Project</span>
+                }
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="stats-row mb-4">
+                <div class="stat-item">
+                    <span class="stat-value">@parsedData.Endpoints.Count</span>
+                    <span class="stat-label">Endpoints</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">@parsedData.Endpoints.Sum(e => e.Responses.Count)</span>
+                    <span class="stat-label">Responses</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value">@parsedData.Variables.Count</span>
+                    <span class="stat-label">Variables</span>
+                </div>
+            </div>
+
+            <div class="endpoints-preview">
+                @foreach (var endpoint in parsedData.Endpoints)
+                {
+                    <div class="endpoint-preview-item" @onclick="() => ToggleEndpoint(endpoint)">
+                        <div class="endpoint-preview-header">
+                            <span class="method-badge method-@endpoint.Method.ToString().ToLower()">@endpoint.Method</span>
+                            <span class="endpoint-route">@endpoint.Route</span>
+                            @if (!string.IsNullOrEmpty(endpoint.Name))
+                            {
+                                <span class="endpoint-name text-muted">@endpoint.Name</span>
+                            }
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="expand-icon @(expandedEndpoints.Contains(endpoint) ? "expanded" : "")">
+                                <polyline points="6 9 12 15 18 9"/>
+                            </svg>
+                        </div>
+                        @if (expandedEndpoints.Contains(endpoint))
+                        {
+                            <div class="endpoint-preview-details">
+                                @if (!string.IsNullOrEmpty(endpoint.Description))
+                                {
+                                    <p class="text-muted mb-2">@endpoint.Description</p>
+                                }
+                                @if (endpoint.Headers.Any())
+                                {
+                                    <div class="mb-2">
+                                        <strong class="text-sm">Headers:</strong>
+                                        <div class="headers-list mt-1">
+                                            @foreach (var header in endpoint.Headers)
+                                            {
+                                                <div class="header-item">
+                                                    <code>@header.Key</code>: <span class="text-muted">@header.Value</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                                @if (endpoint.Responses.Any())
+                                {
+                                    <div>
+                                        <strong class="text-sm">Responses (@endpoint.Responses.Count):</strong>
+                                        <div class="responses-list mt-1">
+                                            @foreach (var response in endpoint.Responses)
+                                            {
+                                                <div class="response-item">
+                                                    <span class="status-badge status-@GetStatusClass(response.StatusCode)">@response.StatusCode</span>
+                                                    <span>@response.Name</span>
+                                                    @if (!string.IsNullOrEmpty(response.StatusText))
+                                                    {
+                                                        <span class="text-muted">- @response.StatusText</span>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+<style>
+    .file-upload-area {
+        border: 2px dashed var(--border-color);
+        border-radius: var(--radius);
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    
+    .file-upload-area:hover,
+    .file-upload-area.dragging {
+        border-color: var(--primary-color);
+        background: var(--bg-hover);
+    }
+    
+    .file-upload-area .file-input {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        opacity: 0;
+        cursor: pointer;
+    }
+    
+    .file-upload-content {
+        pointer-events: none;
+    }
+    
+    .stats-row {
+        display: flex;
+        gap: 2rem;
+        padding: 1rem;
+        background: var(--bg-hover);
+        border-radius: var(--radius);
+    }
+    
+    .stat-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+    }
+    
+    .endpoints-preview {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .endpoint-preview-item {
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius);
+        overflow: hidden;
+    }
+    
+    .endpoint-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1rem;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .endpoint-preview-header:hover {
+        background: var(--bg-hover);
+    }
+    
+    .endpoint-route {
+        font-family: var(--font-mono);
+        font-size: 0.875rem;
+    }
+    
+    .endpoint-name {
+        font-size: 0.875rem;
+        margin-left: auto;
+    }
+    
+    .expand-icon {
+        margin-left: 0.5rem;
+        transition: transform 0.2s;
+    }
+    
+    .expand-icon.expanded {
+        transform: rotate(180deg);
+    }
+    
+    .endpoint-preview-details {
+        padding: 1rem;
+        background: var(--bg-hover);
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .headers-list,
+    .responses-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .header-item,
+    .response-item {
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .status-badge {
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius);
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+    
+    .status-2xx { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .status-3xx { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+    .status-4xx { background: rgba(249, 115, 22, 0.2); color: #f97316; }
+    .status-5xx { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    
+    .method-badge {
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius);
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .method-get { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+    .method-post { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+    .method-put { background: rgba(249, 115, 22, 0.2); color: #f97316; }
+    .method-patch { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+    .method-delete { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .method-head { background: rgba(107, 114, 128, 0.2); color: #6b7280; }
+    .method-options { background: rgba(107, 114, 128, 0.2); color: #6b7280; }
+    
+    .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid transparent;
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+    }
+    
+    @@keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+</style>
+
+@code {
+    private string importFormat = "postman";
+    private string? selectedProjectId;
+    private IBrowserFile? selectedFile;
+    private string? fileContent;
+    private bool isProcessing;
+    private bool isDragging;
+    private string? errorMessage;
+    private string? successMessage;
+    private ParsedCollectionData? parsedData;
+    private ImportOptions importOptions = new() { SkipDuplicates = true, CreateExamples = true, ImportHeaders = true };
+    private List<MockProjectDto> userProjects = new();
+    private HashSet<ParsedEndpoint> expandedEndpoints = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserProjects();
+    }
+
+    private async Task LoadUserProjects()
+    {
+        var result = await ProjectService.GetUserProjectsAsync();
+        if (result.IsSuccess && result.Data != null)
+        {
+            userProjects = result.Data;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        errorMessage = null;
+        successMessage = null;
+        parsedData = null;
+        selectedFile = e.File;
+
+        try
+        {
+            using var stream = selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+            using var reader = new StreamReader(stream);
+            fileContent = await reader.ReadToEndAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to read file: {ex.Message}";
+            selectedFile = null;
+        }
+    }
+
+    private void HandleDragEnter() => isDragging = true;
+    private void HandleDragLeave() => isDragging = false;
+    private void HandleDrop() => isDragging = false;
+
+    private async Task ParseCollection()
+    {
+        if (string.IsNullOrEmpty(fileContent))
+        {
+            errorMessage = "Please select a file first.";
+            return;
+        }
+
+        errorMessage = null;
+        successMessage = null;
+        isProcessing = true;
+        expandedEndpoints.Clear();
+
+        try
+        {
+            Application.Common.Result<ParsedCollectionData> result;
+
+            if (importFormat == "postman")
+            {
+                result = await ImportService.ParsePostmanCollectionAsync(fileContent);
+            }
+            else
+            {
+                var isYaml = importFormat == "openapi-yaml";
+                result = await ImportService.ParseOpenApiSpecAsync(fileContent, isYaml);
+            }
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                parsedData = result.Data;
+                successMessage = $"Successfully parsed {parsedData.Endpoints.Count} endpoints.";
+            }
+            else
+            {
+                errorMessage = result.Error ?? "Failed to parse collection.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error parsing collection: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private async Task ImportCollection()
+    {
+        if (parsedData == null || string.IsNullOrEmpty(selectedProjectId))
+        {
+            errorMessage = "Please select a target project.";
+            return;
+        }
+
+        errorMessage = null;
+        successMessage = null;
+        isProcessing = true;
+
+        try
+        {
+            var projectId = Guid.Parse(selectedProjectId);
+            var result = await ImportService.ImportToProjectAsync("", projectId, parsedData, importOptions);
+
+            if (result.IsSuccess && result.Data != null)
+            {
+                var importResult = result.Data;
+                successMessage = $"Import completed! Created {importResult.EndpointsCreated} endpoints and {importResult.ResponsesCreated} responses.";
+
+                if (importResult.Warnings.Any())
+                {
+                    successMessage += $" Warnings: {string.Join(", ", importResult.Warnings)}";
+                }
+
+                // Navigate to the project
+                Navigation.NavigateTo($"/projects/{selectedProjectId}");
+            }
+            else
+            {
+                errorMessage = result.Error ?? "Failed to import collection.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error importing collection: {ex.Message}";
+        }
+        finally
+        {
+            isProcessing = false;
+        }
+    }
+
+    private void ToggleEndpoint(ParsedEndpoint endpoint)
+    {
+        if (expandedEndpoints.Contains(endpoint))
+        {
+            expandedEndpoints.Remove(endpoint);
+        }
+        else
+        {
+            expandedEndpoints.Add(endpoint);
+        }
+    }
+
+    private string FormatFileSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024.0:F1} KB";
+        return $"{bytes / (1024.0 * 1024.0):F1} MB";
+    }
+
+    private string GetStatusClass(int statusCode) => statusCode switch
+    {
+        >= 200 and < 300 => "2xx",
+        >= 300 and < 400 => "3xx",
+        >= 400 and < 500 => "4xx",
+        >= 500 => "5xx",
+        _ => "2xx"
+    };
+}
+

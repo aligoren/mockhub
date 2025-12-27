@@ -47,6 +47,7 @@ public static class DependencyInjection
         services.AddScoped<IMockEndpointService, MockEndpointService>();
         services.AddScoped<IMockResponseService, MockResponseService>();
         services.AddScoped<IRequestLogService, RequestLogService>();
+        services.AddScoped<IImportService, MockHub.Application.Services.ImportService>();
 
         return services;
     }
