@@ -180,7 +180,21 @@ Key settings in `appsettings.json`:
 
 ## Documentation
 
-For detailed documentation, including installation guides, API reference, and advanced usage, see [DOCUMENTATION.md](DOCUMENTATION.md).
+Comprehensive documentation is available in the [docs/](docs/) directory:
+
+- **[Installation Guide](docs/installation-guide.md)** - Complete setup instructions for all platforms
+- **[User Management](docs/user-management.md)** - Admin-based user system and permissions
+- **[Team Management](docs/team-management.md)** - Collaborative workspaces and team roles
+- **[Project Management](docs/project-management.md)** - Creating and managing mock projects
+- **[Endpoint Configuration](docs/endpoint-configuration.md)** - HTTP endpoints, routes, and responses
+- **[Dynamic Variables](docs/dynamic-variables.md)** - Template system and Faker integration
+- **[Request Logging](docs/request-logging.md)** - Real-time logging and analytics
+- **[JWT Simulation](docs/jwt-simulation.md)** - Token validation and role-based responses
+- **[CORS Configuration](docs/cors-configuration.md)** - Cross-origin resource sharing
+- **[Path-Based Routing](docs/path-based-routing.md)** - URL routing system
+- **[Docker Deployment](docs/docker-deployment.md)** - Containerization and orchestration
+
+For general usage information, see [DOCUMENTATION.md](DOCUMENTATION.md).
 
 ## License
 
