@@ -3,11 +3,13 @@
 @using MockHub.Application.Interfaces
 @using MockHub.Application.DTOs.Project
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize]
 @inject IImportService ImportService
 @inject IMockProjectService ProjectService
 @inject NavigationManager Navigation
+@inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Import Collections - MockHub</PageTitle>
 
@@ -427,15 +429,21 @@
     private ImportOptions importOptions = new() { SkipDuplicates = true, CreateExamples = true, ImportHeaders = true };
     private List<MockProjectDto> userProjects = new();
     private HashSet<ParsedEndpoint> expandedEndpoints = new();
+    private string? userId;
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        
         await LoadUserProjects();
     }
 
     private async Task LoadUserProjects()
     {
-        var result = await ProjectService.GetUserProjectsAsync();
+        if (string.IsNullOrEmpty(userId)) return;
+        
+        var result = await ProjectService.GetAllAsync(userId);
         if (result.IsSuccess && result.Data != null)
         {
             userProjects = result.Data;
@@ -528,7 +536,7 @@
         try
         {
             var projectId = Guid.Parse(selectedProjectId);
-            var result = await ImportService.ImportToProjectAsync("", projectId, parsedData, importOptions);
+            var result = await ImportService.ImportToProjectAsync(userId ?? "", projectId, parsedData, importOptions);
 
             if (result.IsSuccess && result.Data != null)
             {
